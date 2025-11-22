@@ -1,27 +1,24 @@
-
 # FastAPI
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
 
-
-langchain==1.0.3
+# LangChain ecosystem (modular)
 langchain-openai==0.2.1
 langchain-community==0.2.16
 langchain-text-splitters==0.2.4
-langchain-core==0.2.38
 
-# Pydantic (auto-resolve)
+# Pydantic (let pip choose compatible versions)
 pydantic
 pydantic-settings
 
-# Vector Store
+# Vector store / DB
 chromadb==0.4.22
 
-# OpenAI
+# OpenAI + tokenization
 openai==1.10.0
 tiktoken==0.5.2
 
-# YouTube
+# YouTube helpers
 youtube-transcript-api==0.6.1
 pytube==15.0.0
 yt-dlp==2023.12.30
@@ -30,5 +27,5 @@ yt-dlp==2023.12.30
 python-dotenv==1.0.0
 python-multipart==0.0.6
 
-# Web
+# Web search
 tavily-python==0.5.0
