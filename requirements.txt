@@ -16,7 +16,8 @@ chromadb==0.4.22
 
 # OpenAI + tokenization
 openai==1.40.0
-tiktoken==0.5.2
+tiktoken==0.7.0
+
 
 # YouTube helpers
 youtube-transcript-api==0.6.1
