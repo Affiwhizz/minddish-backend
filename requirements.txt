@@ -15,7 +15,7 @@ pydantic-settings
 chromadb==0.4.22
 
 # OpenAI + tokenization
-openai==1.10.0
+openai==1.40.0
 tiktoken==0.5.2
 
 # YouTube helpers
