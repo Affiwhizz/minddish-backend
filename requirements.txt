@@ -1,32 +1,31 @@
-# FastAPI
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
+# FastAPI server
+fastapi
+uvicorn[standard]
 
 # LangChain ecosystem (modular)
-langchain-openai==0.2.1
-langchain-community==0.2.16
-langchain-text-splitters==0.2.4
+langchain-openai
+langchain-community
+langchain-text-splitters
 
-# Pydantic (let pip choose compatible versions)
+# Pydantic & settings
 pydantic
 pydantic-settings
 
-# Vector store / DB
-chromadb==0.4.22
+# Vector store
+chromadb
 
 # OpenAI + tokenization
-openai==1.40.0
-tiktoken==0.7.0
-
+openai
+tiktoken
 
 # YouTube helpers
-youtube-transcript-api==0.6.1
-pytube==15.0.0
-yt-dlp==2023.12.30
+youtube-transcript-api
+pytube
+yt-dlp
 
 # Utilities
-python-dotenv==1.0.0
-python-multipart==0.0.6
+python-dotenv
+python-multipart
 
 # Web search
-tavily-python==0.5.0
+tavily-python
