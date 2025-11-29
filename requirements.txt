@@ -2,7 +2,7 @@
 fastapi
 uvicorn[standard]
 
-# LangChain ecosystem (modular)
+# LangChain ecosystem (FIXED - all modules)
 langchain
 langchain-openai
 langchain-community
@@ -20,14 +20,12 @@ chromadb
 openai
 tiktoken
 
-# YouTube helpers
+# YouTube helpers (optional - we're using local transcripts)
 youtube-transcript-api
-pytube
-yt-dlp
 
 # Utilities
 python-dotenv
 python-multipart
 
-# Web search
+# Web search (optional for now)
 tavily-python
