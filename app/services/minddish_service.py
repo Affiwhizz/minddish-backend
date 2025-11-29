@@ -2,11 +2,13 @@
 MindDish.ai Service - Production Backend
 Multilingual RAG-based cooking assistant with 17 specialized tools
 Uses create_agent from LangChain 1.1.0+
+FIXED: Uses chromadb.PersistentClient for reliable database loading
 """
 
 import os
 import json
 import re
+import chromadb
 from pathlib import Path
 from typing import Dict, List, Optional
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
@@ -38,9 +40,9 @@ class MindDishService:
         )
         
         # Initialize embeddings
-        self.embeddings = OpenAIEmbeddings(api_key=openai_api_key)
+        self.embeddings = OpenAIEmbeddings(api_key=openai_api_key, model="text-embedding-3-small")
         
-        # Load existing ChromaDB
+        # Load existing ChromaDB using PersistentClient
         self.vectorstore = self._load_vectorstore()
         
         # Build indexed videos dictionary
@@ -61,20 +63,37 @@ class MindDishService:
         self.agent = self._create_agent()
     
     def _load_vectorstore(self):
-        """Load pre-built ChromaDB vectorstore"""
-    chroma_path = Path("./chroma_db")
-    
-    if not chroma_path.exists():
-        raise FileNotFoundError(
-            f"ChromaDB not found at {chroma_path}. "
-            "Run build_chroma.py first or ensure chroma_db folder exists."
+        """Load pre-built ChromaDB vectorstore using PersistentClient"""
+        chroma_path = "./chroma_db"
+        
+        if not os.path.exists(chroma_path):
+            raise FileNotFoundError(
+                f"ChromaDB not found at {chroma_path}. "
+                "Run build_chroma.py first or ensure chroma_db folder exists."
+            )
+        
+        # Use PersistentClient to properly load the database
+        client = chromadb.PersistentClient(path=chroma_path)
+        
+        # List collections to verify
+        collections = client.list_collections()
+        print(f"Available collections: {[c.name for c in collections]}")
+        
+        # Load using LangChain Chroma with the client
+        vectorstore = Chroma(
+            client=client,
+            collection_name="minddish_curated",
+            embedding_function=self.embeddings
         )
-    
-    vectorstore = Chroma(
-        persist_directory=str(chroma_path),
-        embedding_function=self.embeddings,
-        collection_name="minddish_curated"
-    )
+        
+        # Verify data loaded
+        try:
+            count = vectorstore._collection.count()
+            print(f"Loaded ChromaDB with {count} documents")
+        except Exception as e:
+            print(f"Warning: Could not count documents: {e}")
+        
+        return vectorstore
     
     def _build_indexed_videos(self) -> Dict:
         """Build indexed videos dictionary from vectorstore metadata"""
@@ -84,7 +103,9 @@ class MindDishService:
             collection = self.vectorstore._collection
             all_data = collection.get()
             
-            for metadata in all_data['metadatas']:
+            print(f"Building index from {len(all_data.get('ids', []))} chunks")
+            
+            for metadata in all_data.get('metadatas', []):
                 if metadata and 'video_id' in metadata:
                     video_id = metadata['video_id']
                     if video_id not in indexed_videos:
@@ -96,6 +117,8 @@ class MindDishService:
                             'method': metadata.get('method', 'youtube_transcript_api')
                         }
                     indexed_videos[video_id]['chunks'] += 1
+            
+            print(f"Indexed {len(indexed_videos)} videos")
         except Exception as e:
             print(f"Warning: Could not build indexed videos: {e}")
         
@@ -669,8 +692,11 @@ Guidelines:
     
     def get_stats(self) -> Dict:
         """Get system statistics"""
-        collection = self.vectorstore._collection
-        count = collection.count()
+        try:
+            collection = self.vectorstore._collection
+            count = collection.count()
+        except:
+            count = 0
         
         return {
             "total_chunks": count,
