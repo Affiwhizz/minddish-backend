@@ -1,25 +1,29 @@
 """
 MindDish.ai Service - Production Backend
-Multilingual RAG-based cooking assistant Uses pre-built ChromaDB and local transcripts
-
+Multilingual RAG-based cooking assistant with 17 specialized tools
+Uses create_agent from LangChain 1.1.0+
 """
 
 import os
+import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_core.messages import HumanMessage, AIMessage
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import tool
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_core.documents import Document
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.output_parsers import StrOutputParser
+from langchain.agents import create_agent
 
 # Service instances cache (session-based)
 _service_instances = {}
 
+
 class MindDishService:
-    """Complete MindDish.ai RAG service with web search"""
+    """Complete MindDish.ai RAG service with 17 tools"""
     
     def __init__(self, openai_api_key: str, tavily_api_key: Optional[str] = None, session_id: str = "default"):
         self.session_id = session_id
@@ -33,379 +37,661 @@ class MindDishService:
             api_key=openai_api_key
         )
         
+        # Initialize embeddings
+        self.embeddings = OpenAIEmbeddings(api_key=openai_api_key)
+        
         # Load existing ChromaDB
         self.vectorstore = self._load_vectorstore()
+        
+        # Build indexed videos dictionary
+        self.indexed_videos = self._build_indexed_videos()
+        
+        # Create RAG chain
+        self.rag_chain = self._create_rag_chain()
         
         # Initialize chat history
         self.chat_history = []
         self.awaiting_permission = False
         self.pending_question = None
         
-        # Create tools (includes web search!)
+        # Create all 17 tools
         self.tools = self._create_tools()
         
-        # Create permission-aware prompt manager
-        self.prompt_manager = self._create_prompt_manager()
+        # Create agent
+        self.agent = self._create_agent()
     
     def _load_vectorstore(self):
         """Load pre-built ChromaDB vectorstore"""
-        embeddings = OpenAIEmbeddings(api_key=self.openai_api_key)
-        
-        # Path to your ChromaDB
+        # Use relative path that works on Render
         chroma_path = Path("./chroma_db")
         
         if not chroma_path.exists():
             raise FileNotFoundError(
                 f"ChromaDB not found at {chroma_path}. "
-                "Please copy your data/chroma_minddish folder to ./chroma_db"
+                "Run build_chroma.py first or ensure chroma_db folder exists."
             )
         
         vectorstore = Chroma(
             persist_directory=str(chroma_path),
-            embedding_function=embeddings
+            embedding_function=self.embeddings
         )
         
         return vectorstore
     
-    def _create_tools(self) -> List[StructuredTool]:
-        """Create all MindDish tools including WEB SEARCH"""
+    def _build_indexed_videos(self) -> Dict:
+        """Build indexed videos dictionary from vectorstore metadata"""
+        indexed_videos = {}
         
-        tools = []
-        
-        # Tool 1: Video QA (primary RAG)
-        def video_qa(query: str) -> str:
-            """Search indexed cooking videos and answer questions"""
-            docs = self.vectorstore.similarity_search(query, k=5)
-            if not docs:
-                return "No relevant information found in indexed videos."
-            
-            context = "\n\n".join([d.page_content for d in docs[:3]])
-            
-            prompt = f"""Based on these cooking video transcripts:
-
-{context}
-
-Question: {query}
-
-Answer the question using ONLY the information above. If the answer isn't in the transcripts, say so."""
-            
-            response = self.llm.invoke(prompt)
-            
-            # Add source info
-            sources = []
-            for doc in docs[:3]:
-                title = doc.metadata.get('title', 'Unknown')
-                if title not in sources:
-                    sources.append(title)
-            
-            return f"{response.content}\n\nSources: {', '.join(sources)}"
-        
-        tools.append(StructuredTool.from_function(
-            func=video_qa,
-            name="video_qa_tool",
-            description="Search and answer questions from indexed cooking videos. Use this FIRST for any cooking question."
-        ))
-        
-        # Tool 2: WEB SEARCH - THE WOW FACTOR!
-        def web_search_cooking(query: str) -> str:
-            """Search the web for cooking information, recipes, substitutions, nutrition"""
-            try:
-                # Try Tavily first (if API key available)
-                if self.tavily_api_key:
-                    from tavily import TavilyClient
-                    client = TavilyClient(api_key=self.tavily_api_key)
-                    results = client.search(query, max_results=3)
-                    
-                    response = f"Web search results for '{query}':\n\n"
-                    for i, result in enumerate(results.get('results', []), 1):
-                        response += f"{i}. {result['title']}\n"
-                        response += f"   {result['content'][:200]}...\n"
-                        response += f"   Source: {result['url']}\n\n"
-                    
-                    return response
-                else:
-                    # Fallback to DuckDuckGo (free, no API key)
-                    from duckduckgo_search import DDGS
-                    results = DDGS().text(query, max_results=3)
-                    
-                    response = f"Web search results for '{query}':\n\n"
-                    for i, result in enumerate(results, 1):
-                        response += f"{i}. {result['title']}\n"
-                        response += f"   {result['body'][:200]}...\n"
-                        response += f"   Source: {result['href']}\n\n"
-                    
-                    return response
-                    
-            except Exception as e:
-                return f"Web search failed: {str(e)}"
-        
-        tools.append(StructuredTool.from_function(
-            func=web_search_cooking,
-            name="web_search_cooking_tool",
-            description="Search the web for cooking tips, recipes, nutrition info, substitutions. Use AFTER checking indexed videos when user grants permission."
-        ))
-        
-        # Tool 3: List videos
-        def list_videos(query: str = "") -> str:
-            """List all indexed videos"""
+        try:
             collection = self.vectorstore._collection
             all_data = collection.get()
             
-            video_titles = set()
             for metadata in all_data['metadatas']:
-                if metadata and 'title' in metadata:
-                    video_titles.add(metadata['title'])
-            
-            return f"Indexed videos ({len(video_titles)}):\n" + "\n".join(f"- {title}" for title in sorted(video_titles))
+                if metadata and 'video_id' in metadata:
+                    video_id = metadata['video_id']
+                    if video_id not in indexed_videos:
+                        indexed_videos[video_id] = {
+                            'title': metadata.get('title', 'Unknown'),
+                            'collection': metadata.get('collection', 'unknown'),
+                            'url': metadata.get('url', f'https://youtu.be/{video_id}'),
+                            'chunks': 0,
+                            'method': metadata.get('method', 'youtube_transcript_api')
+                        }
+                    indexed_videos[video_id]['chunks'] += 1
+        except Exception as e:
+            print(f"Warning: Could not build indexed videos: {e}")
         
-        tools.append(StructuredTool.from_function(
-            func=list_videos,
-            name="list_videos_tool",
-            description="List all indexed cooking videos"
-        ))
-        
-        # Tool 4: Extract ingredients
-        def extract_ingredients(video_title: str) -> str:
-            """Extract ingredients from a specific video"""
-            docs = self.vectorstore.similarity_search(f"ingredients {video_title}", k=3)
-            
-            if not docs:
-                return f"No ingredients found for '{video_title}'"
-            
-            context = "\n\n".join([d.page_content for d in docs])
-            
-            prompt = f"""Extract all ingredients mentioned in this cooking video transcript:
-
-{context}
-
-List only the ingredients, one per line."""
-            
-            response = self.llm.invoke(prompt)
-            return response.content
-        
-        tools.append(StructuredTool.from_function(
-            func=extract_ingredients,
-            name="extract_ingredients_tool",
-            description="Extract ingredients list from a specific video"
-        ))
-        
-        # Tool 5: Cooking time
-        def cooking_time(video_title: str) -> str:
-            """Get cooking time from video"""
-            docs = self.vectorstore.similarity_search(f"cooking time {video_title}", k=3)
-            
-            if not docs:
-                return f"No cooking time found for '{video_title}'"
-            
-            context = "\n\n".join([d.page_content for d in docs])
-            
-            prompt = f"""From this cooking video, extract timing information:
-
-{context}
-
-List prep time, cook time, and total time if mentioned."""
-            
-            response = self.llm.invoke(prompt)
-            return response.content
-        
-        tools.append(StructuredTool.from_function(
-            func=cooking_time,
-            name="cooking_time_tool",
-            description="Get cooking and prep times from a video"
-        ))
-        
-        return tools
+        return indexed_videos
     
-    def _create_prompt_manager(self):
-        """Create permission-aware prompt manager"""
+    def _create_rag_chain(self):
+        """Create RAG chain for video QA"""
+        retriever = self.vectorstore.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 4}
+        )
         
-        class PromptManager:
-            def __init__(self, llm, vectorstore):
-                self.llm = llm
-                self.vectorstore = vectorstore
-            
-            def get_smart_response(self, question: str, permission_granted: bool = False):
-                """Check transcripts first, ask permission if not found"""
-                
-                # Search videos
-                docs = self.vectorstore.similarity_search(question, k=5)
-                
-                if not docs or len(docs) == 0:
-                    return {
-                        "answer": "I don't have this information in my indexed videos. Would you like me to search the web for this? (Reply 'yes' to proceed)",
-                        "needs_permission": True,
-                        "sources": [],
-                        "source_type": "none"
-                    }
-                
-                # Found in videos
-                context = "\n\n".join([d.page_content for d in docs[:3]])
-                
-                prompt = f"""You are MindDish.ai. Answer based on these video transcripts:
+        def format_docs(docs):
+            formatted = []
+            for doc in docs:
+                source = f"[{doc.metadata.get('collection', 'unknown')}] {doc.metadata.get('title', 'Unknown')}"
+                formatted.append(f"Source: {source}\nContent: {doc.page_content}")
+            return "\n\n".join(formatted)
+        
+        qa_template = """You are MindDish.ai, a cooking assistant that answers questions based ONLY on the provided video transcripts.
 
+Context from cooking videos:
 {context}
 
 Question: {question}
 
-If the transcripts contain the answer, provide a helpful response with specific details.
-If the transcripts DON'T contain the answer, say: "I don't have this information in my indexed videos."
-"""
-                
-                response = self.llm.invoke(prompt)
-                answer = response.content
-                
-                # Check if LLM says it doesn't have the info
-                if "don't have this information" in answer.lower():
-                    return {
-                        "answer": "I don't have this information in my indexed videos. Would you like me to search the web for this? (Reply 'yes' to proceed)",
-                        "needs_permission": True,
-                        "sources": [],
-                        "source_type": "none"
-                    }
-                
-                sources = []
-                for doc in docs[:3]:
-                    sources.append({
-                        'title': doc.metadata.get('title', 'Unknown'),
-                        'url': doc.metadata.get('url', ''),
-                        'cuisine': doc.metadata.get('collection', 'Unknown')
-                    })
-                
-                return {
-                    "answer": answer,
-                    "needs_permission": False,
-                    "sources": sources,
-                    "source_type": "transcripts"
-                }
+Instructions:
+- Answer ONLY based on the context provided
+- If the information is not in the context, say "I don't have this information in the indexed videos"
+- Always cite which video the information comes from
+- Be helpful and provide step-by-step instructions when relevant
+
+Answer:"""
         
-        return PromptManager(self.llm, self.vectorstore)
+        qa_prompt = ChatPromptTemplate.from_template(qa_template)
+        
+        rag_chain = (
+            {"context": retriever | format_docs, "question": RunnablePassthrough()}
+            | qa_prompt
+            | self.llm
+            | StrOutputParser()
+        )
+        
+        return rag_chain
     
-    def chat(self, message: str, enhance_with_web: bool = True) -> Dict:
-        """Main chat method with permission handling and WEB SEARCH"""
-        
-        # Check if waiting for permission
-        if self.awaiting_permission:
-            if message.lower() in ['yes', 'y', 'ok', 'sure', 'go ahead', 'search', 'search web']:
-                # User granted permission - USE WEB SEARCH!
-                
-                # Find the web search tool
-                web_search_tool = None
-                for tool in self.tools:
-                    if tool.name == "web_search_cooking_tool":
-                        web_search_tool = tool
-                        break
-                
-                if web_search_tool and enhance_with_web:
-                    # Execute web search with the pending question
-                    web_result = web_search_tool.func(self.pending_question)
-                    
-                    # Format response
-                    answer = f"Using web search (not from indexed videos)\n\n{web_result}"
-                    source_type = "web_search"
-                else:
-                    # Fallback to general knowledge
-                    prompt = f"""The user asked: {self.pending_question}
-
-This information is not in the indexed cooking videos. Provide a helpful answer using your general cooking knowledge.
-
-Note: This is general cooking knowledge, not from the video database."""
-                    
-                    response = self.llm.invoke(prompt)
-                    answer = f"Using general cooking knowledge (not from indexed videos)\n\n{response.content}"
-                    source_type = "general_knowledge"
-                
-                self.awaiting_permission = False
-                self.pending_question = None
-                
-                self.chat_history.append(HumanMessage(content=message))
-                self.chat_history.append(AIMessage(content=answer))
-                
-                return {
-                    "response": answer,
-                    "status": "success_with_permission",
-                    "source_type": source_type
-                }
-            else:
-                # User declined
-                self.awaiting_permission = False
-                self.pending_question = None
-                
-                response = "No problem! I'll stick to my indexed videos. What else would you like to know about cooking?"
-                
-                self.chat_history.append(HumanMessage(content=message))
-                self.chat_history.append(AIMessage(content=response))
-                
-                return {
-                    "response": response,
-                    "status": "permission_declined"
-                }
-        
-        # Normal query processing
-        result = self.prompt_manager.get_smart_response(message)
-        
-        if result['needs_permission']:
-            self.awaiting_permission = True
-            self.pending_question = message
+    def _web_search(self, query: str, max_results: int = 3) -> dict:
+        """Search the web using Tavily API"""
+        try:
+            if not self.tavily_api_key:
+                return {"status": "error", "results": [], "message": "TAVILY_API_KEY not configured"}
             
-            self.chat_history.append(HumanMessage(content=message))
-            self.chat_history.append(AIMessage(content=result['answer']))
+            from tavily import TavilyClient
+            client = TavilyClient(api_key=self.tavily_api_key)
+            
+            response = client.search(query=query, max_results=max_results)
+            
+            formatted_results = []
+            for result in response.get('results', []):
+                formatted_results.append({
+                    'title': result.get('title', 'No title'),
+                    'url': result.get('url', ''),
+                    'content': result.get('content', ''),
+                    'score': result.get('score', 0.0)
+                })
             
             return {
-                "response": result['answer'],
-                "status": "awaiting_permission"
+                "status": "success",
+                "results": formatted_results,
+                "query": query,
+                "answer": response.get('answer', '')
             }
+        except ImportError:
+            return {"status": "error", "results": [], "message": "tavily-python not installed"}
+        except Exception as e:
+            return {"status": "error", "results": [], "message": f"Web search failed: {str(e)[:200]}"}
+    
+    def _create_tools(self) -> List:
+        """Create all 17 MindDish tools"""
         
-        # Answer found in videos
-        self.chat_history.append(HumanMessage(content=message))
-        self.chat_history.append(AIMessage(content=result['answer']))
+        # Store references for use in tools
+        vectorstore = self.vectorstore
+        llm = self.llm
+        indexed_videos = self.indexed_videos
+        rag_chain = self.rag_chain
+        web_search = self._web_search
         
-        return {
-            "response": result['answer'],
-            "status": "success",
-            "sources": result.get('sources', []),
-            "source_type": result.get('source_type')
-        }
+        # TOOL 1: Video QA
+        @tool
+        def video_qa_tool(question: str) -> str:
+            """Answer cooking questions using RAG across all indexed videos."""
+            return rag_chain.invoke(question)
+        
+        # TOOL 2: Transcript Search
+        @tool
+        def transcript_search_tool(keyword: str) -> str:
+            """Search for specific keyword mentions across all cooking videos."""
+            results = vectorstore.similarity_search(keyword, k=5)
+            
+            video_counts = {}
+            for doc in results:
+                video_title = doc.metadata.get('title', 'Unknown')
+                video_counts[video_title] = video_counts.get(video_title, 0) + 1
+            
+            if not video_counts:
+                return f"'{keyword}' not found in any videos"
+            
+            response = f"Found '{keyword}' in:\n"
+            for video, count in sorted(video_counts.items(), key=lambda x: x[1], reverse=True):
+                response += f"  - {video}: {count} mention(s)\n"
+            
+            return response
+        
+        # TOOL 3: List Videos
+        @tool
+        def list_videos_tool(query: str = "") -> str:
+            """List all indexed cooking videos with details."""
+            response = f"Indexed Cooking Videos ({len(indexed_videos)}):\n\n"
+            for vid_id, info in indexed_videos.items():
+                response += f"- {info['title']}\n"
+                response += f"  ID: {vid_id} | Collection: {info['collection']}\n\n"
+            return response
+        
+        # TOOL 4: Video Summary
+        @tool
+        def video_summary_tool(video_title_or_id: str) -> str:
+            """Generate a comprehensive summary of a specific cooking video."""
+            video_id = None
+            for vid, info in indexed_videos.items():
+                if video_title_or_id.lower() in info['title'].lower() or video_title_or_id == vid:
+                    video_id = vid
+                    break
+            
+            if not video_id:
+                return f"Video '{video_title_or_id}' not found. Use list_videos_tool to see available videos."
+            
+            results = vectorstore.similarity_search("recipe ingredients steps instructions", k=10)
+            
+            if not results:
+                return f"No content found for video {video_id}"
+            
+            all_text = " ".join([doc.page_content for doc in results[:8]])
+            summary_prompt = f"""Summarize this cooking video including:
+- Dish being made
+- Main ingredients
+- Key cooking steps
+- Cooking time and techniques
+
+Content: {all_text[:2000]}
+
+Summary:"""
+            
+            summary = llm.invoke(summary_prompt)
+            return summary.content
+        
+        # TOOL 5: Compare Videos
+        @tool
+        def compare_videos_tool(topic: str) -> str:
+            """Compare how different cooking videos discuss a specific topic."""
+            results = vectorstore.similarity_search(topic, k=8)
+            
+            video_content = {}
+            for doc in results:
+                video_title = doc.metadata.get('title', 'Unknown')
+                if video_title not in video_content:
+                    video_content[video_title] = []
+                video_content[video_title].append(doc.page_content)
+            
+            if not video_content:
+                return f"No videos discuss '{topic}'"
+            
+            comparison = f"Comparison: '{topic}'\n\n"
+            for video, chunks in video_content.items():
+                excerpt = ' '.join(chunks[:2])[:200]
+                comparison += f"{video}:\n   {excerpt}...\n\n"
+            
+            return comparison
+        
+        # TOOL 6: Find Related Videos
+        @tool
+        def find_related_videos_tool(topic: str) -> str:
+            """Find which cooking videos are most relevant to a topic."""
+            results = vectorstore.similarity_search(topic, k=10)
+            
+            video_scores = {}
+            for doc in results:
+                video_title = doc.metadata.get('title', 'Unknown')
+                video_scores[video_title] = video_scores.get(video_title, 0) + 1
+            
+            sorted_videos = sorted(video_scores.items(), key=lambda x: x[1], reverse=True)
+            
+            response = f"Most relevant videos for '{topic}':\n\n"
+            for i, (video, score) in enumerate(sorted_videos[:3], 1):
+                response += f"{i}. {video} ({score} relevant segments)\n"
+            
+            return response
+        
+        # TOOL 7: Extract Ingredients
+        @tool
+        def extract_ingredients_tool(video_title_or_id: str) -> str:
+            """Extract all ingredients mentioned in a specific cooking video."""
+            video_id = None
+            for vid, info in indexed_videos.items():
+                if video_title_or_id.lower() in info['title'].lower() or video_title_or_id == vid:
+                    video_id = vid
+                    break
+            
+            if not video_id:
+                return f"Video '{video_title_or_id}' not found"
+            
+            results = vectorstore.similarity_search("ingredients what you need shopping list", k=8)
+            
+            if not results:
+                return "No ingredients found"
+            
+            all_text = " ".join([doc.page_content for doc in results])
+            prompt = f"""Extract all ingredients mentioned in this cooking video:
+
+{all_text[:2000]}
+
+Ingredients:"""
+            
+            response = llm.invoke(prompt)
+            return response.content
+        
+        # TOOL 8: Cooking Time
+        @tool
+        def cooking_time_tool(video_title_or_id: str) -> str:
+            """Extract cooking times, prep times, and total time from a video."""
+            video_id = None
+            for vid, info in indexed_videos.items():
+                if video_title_or_id.lower() in info['title'].lower() or video_title_or_id == vid:
+                    video_id = vid
+                    break
+            
+            if not video_id:
+                return f"Video '{video_title_or_id}' not found"
+            
+            results = vectorstore.similarity_search("minutes hours time cook bake prep", k=6)
+            
+            if not results:
+                return "No timing information found"
+            
+            all_text = " ".join([doc.page_content for doc in results])
+            prompt = f"""Extract all timing information from this cooking video:
+- Prep time
+- Cook time
+- Total time
+
+Content: {all_text[:1500]}
+
+Time breakdown:"""
+            
+            response = llm.invoke(prompt)
+            return response.content
+        
+        # TOOL 9: Equipment Checker
+        @tool
+        def equipment_checker_tool(video_title_or_id: str) -> str:
+            """List all cooking equipment and tools needed for a recipe."""
+            video_id = None
+            for vid, info in indexed_videos.items():
+                if video_title_or_id.lower() in info['title'].lower() or video_title_or_id == vid:
+                    video_id = vid
+                    break
+            
+            if not video_id:
+                return f"Video '{video_title_or_id}' not found"
+            
+            results = vectorstore.similarity_search("pan pot skillet bowl oven stove equipment tools", k=6)
+            
+            if not results:
+                return "No equipment information found"
+            
+            all_text = " ".join([doc.page_content for doc in results])
+            prompt = f"""List all cooking equipment and tools mentioned in this video:
+
+Content: {all_text[:1500]}
+
+Equipment needed:"""
+            
+            response = llm.invoke(prompt)
+            return response.content
+        
+        # TOOL 10: Smart Substitution (with 3-layer safety)
+        @tool
+        def smart_substitution_tool(original_ingredient: str, substitute: str, dish: str = "") -> str:
+            """Suggest safe ingredient substitutions with 3-layer safety system."""
+            # Layer 1: Dangerous substitutions blacklist
+            dangerous_pairs = [
+                ('baking soda', 'baking powder'),
+                ('baking powder', 'baking soda'),
+                ('salt', 'sugar'),
+                ('sugar', 'salt'),
+            ]
+            
+            ingredient_lower = original_ingredient.lower()
+            substitute_lower = substitute.lower()
+            
+            for pair in dangerous_pairs:
+                if any(item in ingredient_lower for item in pair) and any(item in substitute_lower for item in pair):
+                    return f"DANGER: Substituting {original_ingredient} with {substitute} is UNSAFE!"
+            
+            # Layer 2: Check indexed videos
+            search_query = f"{original_ingredient} substitute {substitute} alternative"
+            results = vectorstore.similarity_search(search_query, k=5)
+            
+            video_context = ""
+            for doc in results:
+                content = doc.page_content.lower()
+                if ingredient_lower in content:
+                    video_context += doc.page_content + "\n"
+            
+            if video_context:
+                prompt = f"""Can I use {substitute} instead of {original_ingredient} in {dish or 'this recipe'}?
+
+Video context: {video_context[:800]}
+
+Provide: YES/NO/DEPENDS, ratio, and how it affects the dish."""
+                
+                response = llm.invoke(prompt)
+                return f"From indexed videos:\n{response.content}"
+            
+            # Layer 3: Web search
+            web_result = web_search(f"substitute {original_ingredient} with {substitute} cooking", max_results=2)
+            
+            if web_result['status'] == 'success' and web_result['results']:
+                web_context = "\n".join([r['content'][:200] for r in web_result['results']])
+                prompt = f"""Can I substitute {original_ingredient} with {substitute}?
+
+Web research: {web_context}
+
+Provide clear YES/NO, ratio, and safety notes."""
+                
+                response = llm.invoke(prompt)
+                return f"From web search:\n{response.content}"
+            
+            return f"No reliable information found for substituting {original_ingredient} with {substitute}."
+        
+        # TOOL 11: Recipe Fact Check
+        @tool
+        def recipe_fact_check_tool(claim: str) -> str:
+            """Verify cooking claims against indexed videos and web sources."""
+            results = vectorstore.similarity_search(claim, k=4)
+            
+            if results:
+                video_evidence = " ".join([doc.page_content for doc in results])
+                prompt = f"""Fact-check this cooking claim:
+Claim: {claim}
+
+Video evidence: {video_evidence[:1000]}
+
+Is this TRUE, FALSE, or PARTIALLY TRUE? Explain."""
+                
+                response = llm.invoke(prompt)
+                return response.content
+            
+            return f"No evidence found in indexed videos for: {claim}"
+        
+        # TOOL 12: Suggest Questions
+        @tool
+        def suggest_questions_tool(topic: str) -> str:
+            """Suggest follow-up questions based on a cooking topic."""
+            results = vectorstore.similarity_search(topic, k=3)
+            
+            context = " ".join([doc.page_content for doc in results]) if results else ""
+            
+            prompt = f"""Based on this cooking topic: {topic}
+
+Context: {context[:500]}
+
+Suggest 5 follow-up questions the user might want to ask:"""
+            
+            response = llm.invoke(prompt)
+            return response.content
+        
+        # TOOL 13: Web Search Cooking
+        @tool
+        def web_search_cooking_tool(query: str) -> str:
+            """Search the web for cooking information not in indexed videos."""
+            result = web_search(query + " cooking recipe", max_results=3)
+            
+            if result['status'] == 'success' and result['results']:
+                response = f"Web search results for '{query}':\n\n"
+                for i, r in enumerate(result['results'], 1):
+                    response += f"{i}. {r['title']}\n   {r['content'][:150]}...\n   URL: {r['url']}\n\n"
+                return response
+            
+            return f"No web results found for: {query}"
+        
+        # TOOL 14: Cultural Context
+        @tool
+        def cultural_context_tool(term: str) -> str:
+            """Explain cultural context of cooking terms, dishes, or ingredients."""
+            results = vectorstore.similarity_search(term, k=4)
+            
+            video_context = " ".join([doc.page_content for doc in results]) if results else ""
+            
+            if video_context:
+                prompt = f"""Explain the cultural context of '{term}' based on this cooking video:
+
+Video Context: {video_context[:500]}
+
+Cultural Context:"""
+                
+                response = llm.invoke(prompt)
+                video_answer = f"From videos:\n{response.content}\n\n"
+            else:
+                video_answer = f"'{term}' not found in indexed videos.\n\n"
+            
+            # Enhance with web search
+            web_result = web_search(f"{term} traditional cooking cultural significance", max_results=2)
+            
+            if web_result['status'] == 'success' and web_result['results']:
+                web_context = "\n".join([f"- {r['content'][:150]}" for r in web_result['results']])
+                return video_answer + f"Additional context from web:\n{web_context}"
+            
+            return video_answer
+        
+        # TOOL 15: Cooking Expert Analysis
+        @tool
+        def cooking_expert_analysis_tool(question: str) -> str:
+            """Get detailed culinary analysis combining video content + web knowledge."""
+            results = vectorstore.similarity_search(question, k=4)
+            video_context = " ".join([doc.page_content for doc in results]) if results else "No relevant video content."
+            
+            web_result = web_search(question + " cooking science technique", max_results=2)
+            web_context = "\n".join([r['content'][:200] for r in web_result.get('results', [])[:2]]) if web_result['status'] == 'success' else "Web unavailable."
+            
+            prompt = f"""As a culinary expert, analyze this question:
+
+Question: {question}
+
+Video Content: {video_context[:800]}
+
+Web Research: {web_context[:400]}
+
+Provide expert analysis covering technique, science, common mistakes, and pro tips."""
+            
+            response = llm.invoke(prompt)
+            return response.content
+        
+        # TOOL 16: Translate Recipe
+        @tool
+        def translate_recipe_tool(text: str, target_language: str = "Portuguese") -> str:
+            """Translate cooking instructions or recipes to another language."""
+            prompt = f"""Translate this cooking content to {target_language}. Maintain culinary terminology accuracy.
+
+Text to translate:
+{text[:1500]}
+
+Translation in {target_language}:"""
+            
+            response = llm.invoke(prompt)
+            return response.content
+        
+        # TOOL 17: Nutrition Calculator
+        @tool
+        def nutrition_calculator_tool(video_title_or_recipe: str, servings: int = 1) -> str:
+            """Calculate approximate nutritional information for a recipe."""
+            try:
+                video_id = None
+                for vid, info in indexed_videos.items():
+                    if video_title_or_recipe.lower() in info['title'].lower():
+                        video_id = vid
+                        break
+                
+                if not video_id:
+                    return f"Video '{video_title_or_recipe}' not found."
+                
+                # Get ingredients
+                ingredients_text = extract_ingredients_tool.func(video_title_or_recipe)
+                
+                web_result = web_search(f"nutrition facts calories {video_title_or_recipe}", max_results=2)
+                web_context = "\n".join([r['content'][:200] for r in web_result.get('results', [])[:2]]) if web_result['status'] == 'success' else "Web unavailable"
+                
+                prompt = f"""Calculate approximate nutritional information:
+
+Recipe: {video_title_or_recipe}
+Servings: {servings}
+
+Ingredients: {ingredients_text[:1000]}
+
+Web data: {web_context[:500]}
+
+Provide: calories, protein, carbs, fat per serving. Note these are estimates."""
+                
+                response = llm.invoke(prompt)
+                return f"Nutritional Information: {video_title_or_recipe}\nServings: {servings}\n\n{response.content}"
+            
+            except Exception as e:
+                return f"Could not calculate nutrition: {str(e)[:200]}"
+        
+        # Return all 17 tools
+        return [
+            video_qa_tool,
+            transcript_search_tool,
+            list_videos_tool,
+            video_summary_tool,
+            compare_videos_tool,
+            find_related_videos_tool,
+            extract_ingredients_tool,
+            cooking_time_tool,
+            equipment_checker_tool,
+            smart_substitution_tool,
+            recipe_fact_check_tool,
+            suggest_questions_tool,
+            web_search_cooking_tool,
+            cultural_context_tool,
+            cooking_expert_analysis_tool,
+            translate_recipe_tool,
+            nutrition_calculator_tool,
+        ]
+    
+    def _create_agent(self):
+        """Create the agent using create_agent"""
+        system_prompt = """You are MindDish.ai, an expert cooking assistant with access to 28 curated cooking videos across 7 global cuisines (African, French, Portuguese, Jamaican, Syrian, Italian, Indian).
+
+You have 17 specialized tools at your disposal. Use the appropriate tool for each task:
+- For recipe questions: use video_qa_tool
+- To find specific mentions: use transcript_search_tool
+- To list available videos: use list_videos_tool
+- For video summaries: use video_summary_tool
+- To compare approaches: use compare_videos_tool
+- For ingredient lists: use extract_ingredients_tool
+- For cooking times: use cooking_time_tool
+- For equipment needed: use equipment_checker_tool
+- For substitutions: use smart_substitution_tool (has safety checks)
+- To verify claims: use recipe_fact_check_tool
+- For web searches: use web_search_cooking_tool
+- For cultural context: use cultural_context_tool
+- For expert analysis: use cooking_expert_analysis_tool
+- To translate: use translate_recipe_tool
+- For nutrition info: use nutrition_calculator_tool
+
+Guidelines:
+- Always cite which video your information comes from
+- If information is not in indexed videos, say so and offer to search the web
+- Be helpful, accurate, and provide step-by-step guidance when needed"""
+        
+        agent_graph = create_agent(
+            model=self.llm,
+            tools=self.tools,
+            system_prompt=system_prompt
+        )
+        
+        return agent_graph
+    
+    def chat(self, message: str, enhance_with_web: bool = True) -> Dict:
+        """Main chat method using the agent"""
+        try:
+            # Invoke agent with message format
+            response = self.agent.invoke({"messages": [("user", message)]})
+            
+            # Extract output from response
+            output = response["messages"][-1].content if response.get("messages") else "No response"
+            
+            # Update chat history
+            self.chat_history.append(HumanMessage(content=message))
+            self.chat_history.append(AIMessage(content=output))
+            
+            return {
+                "response": output,
+                "status": "success",
+                "source_type": "agent"
+            }
+        except Exception as e:
+            return {
+                "response": f"Error: {str(e)}",
+                "status": "error"
+            }
     
     def get_stats(self) -> Dict:
         """Get system statistics"""
         collection = self.vectorstore._collection
         count = collection.count()
         
-        # Get unique videos
-        all_data = collection.get()
-        video_titles = set()
-        for metadata in all_data['metadatas']:
-            if metadata and 'title' in metadata:
-                video_titles.add(metadata['title'])
-        
         return {
             "total_chunks": count,
-            "total_videos": len(video_titles),
+            "total_videos": len(self.indexed_videos),
             "tools_available": len(self.tools),
             "messages_in_memory": len(self.chat_history),
-            "awaiting_permission": self.awaiting_permission,
-            "web_search_enabled": self.tavily_api_key is not None or True
+            "web_search_enabled": self.tavily_api_key is not None
         }
     
     def list_videos(self) -> Dict:
         """List all indexed videos"""
-        collection = self.vectorstore._collection
-        all_data = collection.get()
-        
         videos = []
-        seen_titles = set()
-        
-        for metadata in all_data['metadatas']:
-            if metadata and 'title' in metadata:
-                title = metadata['title']
-                if title not in seen_titles:
-                    videos.append({
-                        'title': title,
-                        'url': metadata.get('url', ''),
-                        'cuisine': metadata.get('collection', 'Unknown'),
-                        'video_id': metadata.get('video_id', '')
-                    })
-                    seen_titles.add(title)
+        for video_id, info in self.indexed_videos.items():
+            videos.append({
+                'title': info['title'],
+                'url': info['url'],
+                'cuisine': info['collection'],
+                'video_id': video_id
+            })
         
         return {"videos": videos}
     
@@ -416,7 +702,7 @@ Note: This is general cooking knowledge, not from the video database."""
         self.pending_question = None
     
     def index_new_video(self, youtube_url: str, custom_name: Optional[str] = None) -> Dict:
-        """Index a new video (using local transcripts)"""
+        """Index a new video (placeholder)"""
         return {
             "status": "error",
             "message": "Dynamic video indexing not yet implemented. Use pre-indexed videos."
