@@ -62,21 +62,19 @@ class MindDishService:
     
     def _load_vectorstore(self):
         """Load pre-built ChromaDB vectorstore"""
-        # Use relative path that works on Render
-        chroma_path = Path("./chroma_db")
-        
-        if not chroma_path.exists():
-            raise FileNotFoundError(
-                f"ChromaDB not found at {chroma_path}. "
-                "Run build_chroma.py first or ensure chroma_db folder exists."
-            )
-        
-        vectorstore = Chroma(
-            persist_directory=str(chroma_path),
-            embedding_function=self.embeddings
+    chroma_path = Path("./chroma_db")
+    
+    if not chroma_path.exists():
+        raise FileNotFoundError(
+            f"ChromaDB not found at {chroma_path}. "
+            "Run build_chroma.py first or ensure chroma_db folder exists."
         )
-        
-        return vectorstore
+    
+    vectorstore = Chroma(
+        persist_directory=str(chroma_path),
+        embedding_function=self.embeddings,
+        collection_name="minddish_curated"
+    )
     
     def _build_indexed_videos(self) -> Dict:
         """Build indexed videos dictionary from vectorstore metadata"""
