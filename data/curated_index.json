@@ -1,0 +1,226 @@
+[
+  {
+    "collection": "african_cuisine",
+    "title": "Nigerian Efo Riro",
+    "url": "https://youtu.be/vIIyn8LH1_E",
+    "video_id": "vIIyn8LH1_E",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/vIIyn8LH1_E.txt"
+  },
+  {
+    "collection": "african_cuisine",
+    "title": "Nigerian Moi-Moi",
+    "url": "https://youtu.be/8ACC_oqhQRQ",
+    "video_id": "8ACC_oqhQRQ",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/8ACC_oqhQRQ.txt"
+  },
+  {
+    "collection": "african_cuisine",
+    "title": "Ghanaian Kontomire Stew",
+    "url": "https://youtu.be/6VXYzN_gDNs",
+    "video_id": "6VXYzN_gDNs",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/6VXYzN_gDNs.txt"
+  },
+  {
+    "collection": "african_cuisine",
+    "title": "South African Chakalaka",
+    "url": "https://youtu.be/FiiTy8FpxqY",
+    "video_id": "FiiTy8FpxqY",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/FiiTy8FpxqY.txt"
+  },
+  {
+    "collection": "french_cuisine",
+    "title": "Flognarde Dessert",
+    "url": "https://youtu.be/Q5uBEWjNeTw",
+    "video_id": "Q5uBEWjNeTw",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/Q5uBEWjNeTw.txt"
+  },
+  {
+    "collection": "french_cuisine",
+    "title": "Coq au Vin",
+    "url": "https://youtu.be/GFuBsSrIVaE",
+    "video_id": "GFuBsSrIVaE",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/GFuBsSrIVaE.txt"
+  },
+  {
+    "collection": "french_cuisine",
+    "title": "Poulet au Vinaigre",
+    "url": "https://youtu.be/tOgH_ElyGQg",
+    "video_id": "tOgH_ElyGQg",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/tOgH_ElyGQg.txt"
+  },
+  {
+    "collection": "french_cuisine",
+    "title": "Ratatouille",
+    "url": "https://youtu.be/9qCO2qKrfr4",
+    "video_id": "9qCO2qKrfr4",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/9qCO2qKrfr4.txt"
+  },
+  {
+    "collection": "portuguese_cuisine",
+    "title": "Bacalhau",
+    "url": "https://youtu.be/xuUelAOuH3o",
+    "video_id": "xuUelAOuH3o",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/xuUelAOuH3o.txt"
+  },
+  {
+    "collection": "portuguese_cuisine",
+    "title": "Carne Estufada",
+    "url": "https://youtu.be/4sRwu9BnLAU",
+    "video_id": "4sRwu9BnLAU",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/4sRwu9BnLAU.txt"
+  },
+  {
+    "collection": "portuguese_cuisine",
+    "title": "Pastel de Nata",
+    "url": "https://youtu.be/MA4LEjxZ7io",
+    "video_id": "MA4LEjxZ7io",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/MA4LEjxZ7io.txt"
+  },
+  {
+    "collection": "portuguese_cuisine",
+    "title": "Bifanas",
+    "url": "https://youtu.be/2PoVTipLxoI",
+    "video_id": "2PoVTipLxoI",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/2PoVTipLxoI.txt"
+  },
+  {
+    "collection": "jamaican_cuisine",
+    "title": "Pork Shoulder",
+    "url": "https://youtu.be/d6IKVNRDjUk",
+    "video_id": "d6IKVNRDjUk",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/d6IKVNRDjUk.txt"
+  },
+  {
+    "collection": "jamaican_cuisine",
+    "title": "Jamaican Curry Chicken",
+    "url": "https://youtu.be/QIG6weWWB4Q",
+    "video_id": "QIG6weWWB4Q",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/QIG6weWWB4Q.txt"
+  },
+  {
+    "collection": "jamaican_cuisine",
+    "title": "Sweet and Sour Fish",
+    "url": "https://youtu.be/RlZx52eyW4M",
+    "video_id": "RlZx52eyW4M",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/RlZx52eyW4M.txt"
+  },
+  {
+    "collection": "jamaican_cuisine",
+    "title": "Rice and Peas",
+    "url": "https://youtu.be/qHC2WBx8Cvg",
+    "video_id": "qHC2WBx8Cvg",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/qHC2WBx8Cvg.txt"
+  },
+  {
+    "collection": "syrian_cuisine",
+    "title": "Shrakiye",
+    "url": "https://youtu.be/tB5XsB91-fQ",
+    "video_id": "tB5XsB91-fQ",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/tB5XsB91-fQ.txt"
+  },
+  {
+    "collection": "syrian_cuisine",
+    "title": "Tabouleh",
+    "url": "https://youtu.be/HMXByWj_TAY",
+    "video_id": "HMXByWj_TAY",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/HMXByWj_TAY.txt"
+  },
+  {
+    "collection": "syrian_cuisine",
+    "title": "Knafe Nabulsieh",
+    "url": "https://youtu.be/DJD4QQkItT4",
+    "video_id": "DJD4QQkItT4",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/DJD4QQkItT4.txt"
+  },
+  {
+    "collection": "syrian_cuisine",
+    "title": "Fatteh",
+    "url": "https://youtu.be/xF4XRASGaC0",
+    "video_id": "xF4XRASGaC0",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/xF4XRASGaC0.txt"
+  },
+  {
+    "collection": "italian_cuisine",
+    "title": "Chicken Cacciatore",
+    "url": "https://youtu.be/bGJMHjG85BM",
+    "video_id": "bGJMHjG85BM",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/bGJMHjG85BM.txt"
+  },
+  {
+    "collection": "italian_cuisine",
+    "title": "Cannelloni",
+    "url": "https://youtu.be/E--DfY3w15k",
+    "video_id": "E--DfY3w15k",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/E--DfY3w15k.txt"
+  },
+  {
+    "collection": "italian_cuisine",
+    "title": "Zozzona",
+    "url": "https://youtu.be/WttUeyXPCbU",
+    "video_id": "WttUeyXPCbU",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/WttUeyXPCbU.txt"
+  },
+  {
+    "collection": "italian_cuisine",
+    "title": "Gnocchi alla Sorrentina",
+    "url": "https://youtu.be/llV1kYg5zNo",
+    "video_id": "llV1kYg5zNo",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/llV1kYg5zNo.txt"
+  },
+  {
+    "collection": "indian_cuisine",
+    "title": "Chana Masala",
+    "url": "https://youtu.be/PRw88q0NkiY",
+    "video_id": "PRw88q0NkiY",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/PRw88q0NkiY.txt"
+  },
+  {
+    "collection": "indian_cuisine",
+    "title": "Chilli Garlic Tawa Chicken",
+    "url": "https://youtu.be/nilVmkdmabs",
+    "video_id": "nilVmkdmabs",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/nilVmkdmabs.txt"
+  },
+  {
+    "collection": "indian_cuisine",
+    "title": "Coconut Dosa",
+    "url": "https://youtu.be/s6h3b4tuhCE",
+    "video_id": "s6h3b4tuhCE",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/s6h3b4tuhCE.txt"
+  },
+  {
+    "collection": "indian_cuisine",
+    "title": "Garlic Naan Bread",
+    "url": "https://youtu.be/wmbpOb9neLY",
+    "video_id": "wmbpOb9neLY",
+    "transcript_source": "local",
+    "transcript_path": "data/transcripts/wmbpOb9neLY.txt"
+  }
+]
